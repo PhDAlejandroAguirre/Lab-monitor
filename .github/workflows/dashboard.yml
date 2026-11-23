@@ -1,0 +1,53 @@
+name: Build dashboard
+
+on:
+  schedule:
+    - cron: "7 * * * *"       # every hour at :07 UTC (see README to make it more frequent)
+  workflow_dispatch:           # "Run workflow" button in the Actions tab
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4            # main: scripts + computers.json
+
+      - name: Get the data branch (written by the lab computers)
+        run: |
+          mkdir -p data-branch/data
+          if git ls-remote --exit-code --heads origin data >/dev/null; then
+            git fetch --depth=1 origin data
+            git --work-tree=data-branch checkout FETCH_HEAD -- data || true
+          fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: dashboard/requirements.txt
+
+      - run: pip install -r dashboard/requirements.txt
+
+      - run: python dashboard/make_plots.py --data data-branch/data --names computers.json --out site --days 20
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
