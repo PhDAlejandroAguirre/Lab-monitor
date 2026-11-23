@@ -1,0 +1,5 @@
+{
+  "_help": "Optional. Map a machine id (pc-...) or a hostname to the name shown on the dashboard. Several ids/hostnames with the same name are merged into one computer (e.g. a dual-boot PC). Examples below - replace them with your own.",
+  "pc-0123456789": "Lab1-PC01",
+  "desktop-abc123": "Lab1-PC01"
+}
