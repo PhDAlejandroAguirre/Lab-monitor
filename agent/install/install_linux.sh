@@ -10,9 +10,20 @@ if [[ ! -f "$SRC/config.json" ]]; then
   echo "Missing $SRC/config.json - copy config.example.json to config.json and fill it in."; exit 1
 fi
 
-echo "==> Installing packages (python3, psutil, lm-sensors)"
-apt-get update -qq
-apt-get install -y -qq python3 python3-psutil lm-sensors
+echo "==> Checking packages (python3, python3-psutil, lm-sensors)"
+missing=()
+for p in python3 python3-psutil lm-sensors; do
+  dpkg -s "$p" >/dev/null 2>&1 || missing+=("$p")
+done
+if (( ${#missing[@]} )); then
+  echo "    installing: ${missing[*]}"
+  # A broken third-party source (e.g. an expired Spotify/Chrome key) makes 'apt-get update'
+  # fail; that must not stop the install, so only warn.
+  apt-get update -qq || echo "    WARNING: 'apt-get update' reported errors (often a third-party source); continuing."
+  apt-get install -y -qq "${missing[@]}"
+else
+  echo "    all present"
+fi
 sensors-detect --auto >/dev/null 2>&1 || true
 
 echo "==> Creating service user 'labmon'"
