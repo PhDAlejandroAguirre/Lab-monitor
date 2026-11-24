@@ -28,6 +28,7 @@ from zoneinfo import ZoneInfo
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.dates as mdates
+import matplotlib.ticker
 import matplotlib.pyplot as plt
 import pandas as pd
 
@@ -157,78 +158,89 @@ def fmt_dt(ts):
 
 # --------------------------------------------------------------------------- charts
 
-def time_axis(ax, hours):
+def time_axis(ax, start, end, compact=False):
+    """Fixed time window [start, end] with readable ticks, even where there is no data."""
+    hours = (end - start).total_seconds() / 3600
+    ax.set_xlim(start, end)
     if hours <= 72:
-        ax.xaxis.set_major_locator(mdates.HourLocator(byhour=[0, 12]))
-        ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m\n%H:%M"))
+        step = 12 if compact else 6
+        ax.xaxis.set_major_locator(mdates.HourLocator(byhour=range(0, 24, step)))
+        ax.xaxis.set_minor_locator(mdates.HourLocator(byhour=range(0, 24, 3 if compact else 1)))
+        # date on the midnight tick, time on the others
+        ax.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(
+            lambda x, _: (lambda t: t.strftime("%d/%m") if t.hour == 0 else t.strftime("%H:%M"))(mdates.num2date(x))))
     else:
-        ax.xaxis.set_major_locator(mdates.DayLocator(interval=max(1, hours // 24 // 8)))
+        ax.xaxis.set_major_locator(mdates.DayLocator(interval=2 if hours > 24 * 10 else 1))
+        ax.xaxis.set_minor_locator(mdates.DayLocator())
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m"))
+    ax.tick_params(axis="x", which="minor", length=2, color=AXIS)
 
 
-def small_card(d, now, path):
-    """Compact chart for the History grid: CPU % on top, temperature below."""
-    end = local_naive(now)
-    start = end - timedelta(hours=CARD_HOURS)
-    r = resample(d[d["t_local"] >= start], "10min")
-    fig, (a1, a2) = plt.subplots(2, 1, figsize=(3.9, 2.5), sharex=True, gridspec_kw={"hspace": 0.35})
-    a1.plot(r["cpu_avg"], color=BLUE)
-    a1.set_ylim(0, 105)
-    a1.set_yticks([0, 50, 100])
-    a1.set_title("CPU %", fontsize=8, color=INK2, fontweight="normal")
+def _panels(axes, r, compact):
+    """Draw the three panels (CPU %, temperature, memory + GPU load) on axes."""
     has_gpu = r["gpu_temp_max"].notna().any()
-    a2.plot(r["cpu_temp_max"], color=BLUE, label="CPU")
-    if has_gpu:
-        a2.plot(r["gpu_temp_max"], color=ORANGE, label="GPU")
-    a2.axhline(TEMP_CRIT, color=MUTED, linewidth=0.7, linestyle="--")
-    a2.set_ylim(20, 100)
-    a2.set_yticks([20, 60, 100])
-    a2.set_title("Temperature °C", fontsize=8, color=INK2, fontweight="normal")
-    if has_gpu:
-        a2.legend(loc="lower right", bbox_to_anchor=(1, 0.98), ncol=2, fontsize=7, handlelength=1.2,
-                  borderaxespad=0, columnspacing=0.8)
-    for a in (a1, a2):
-        a.set_xlim(start, end)
-        a.tick_params(labelsize=7)
-    time_axis(a2, CARD_HOURS)
-    fig.subplots_adjust(left=0.1, right=0.98, top=0.9, bottom=0.17)
-    fig.savefig(path, dpi=100)
-    plt.close(fig)
-
-
-def detail_figure(d, days, path):
-    r = resample(d, "1h" if days > 3 else "10min")
-    has_gpu = r["gpu_temp_max"].notna().any()
-    fig, axes = plt.subplots(3, 1, figsize=(10, 7), sharex=True)
+    fs = 7 if compact else 8
+    legend = (dict(loc="lower right", bbox_to_anchor=(1, 0.98), ncol=2, fontsize=7, handlelength=1.2,
+                   borderaxespad=0, columnspacing=0.8) if compact else
+              dict(loc="lower right", bbox_to_anchor=(1, 1), ncol=2))
+    title = (lambda ax, t: ax.set_title(t, fontsize=8, color=INK2, fontweight="normal")) if compact else \
+            (lambda ax, t: ax.set_title(t))
 
     ax = axes[0]
     ax.plot(r["cpu_avg"], color=BLUE, label="CPU average")
-    ax.plot(r["core_max"], color=MUTED, linewidth=0.9, label="Busiest core")
+    if not compact:
+        ax.plot(r["core_max"], color=MUTED, linewidth=0.9, label="Busiest core")
+        ax.legend(**legend)
     ax.set_ylim(0, 105)
-    ax.set_ylabel("%")
-    ax.set_title("CPU usage")
-    ax.legend(loc="lower right", bbox_to_anchor=(1, 1), ncol=2)
+    ax.set_yticks([0, 50, 100])
+    title(ax, "CPU usage %")
 
     ax = axes[1]
     ax.plot(r["cpu_temp_max"], color=BLUE, label="CPU")
     if has_gpu:
         ax.plot(r["gpu_temp_max"], color=ORANGE, label="GPU")
-    ax.axhline(TEMP_CRIT, color=MUTED, linewidth=0.8, linestyle="--")
-    ax.text(1.0, TEMP_CRIT, f" {TEMP_CRIT} °C", transform=ax.get_yaxis_transform(), color=INK2, va="center", fontsize=8)
-    ax.set_ylabel("°C")
-    ax.set_title("Temperature (max)")
-    ax.legend(loc="lower right", bbox_to_anchor=(1, 1), ncol=2)
+    ax.axhline(TEMP_CRIT, color=MUTED, linewidth=0.7, linestyle="--")
+    if not compact:
+        ax.text(1.0, TEMP_CRIT, f" {TEMP_CRIT} °C", transform=ax.get_yaxis_transform(), color=INK2, va="center", fontsize=8)
+    ax.set_ylim(20, 100)
+    ax.set_yticks([20, 40, 60, 80, 100] if not compact else [20, 60, 100])
+    title(ax, "Temperature °C (max)")
+    if has_gpu or not compact:
+        ax.legend(**legend)
 
     ax = axes[2]
     ax.plot(r["ram_pct"], color=TEAL, label="RAM used")
     if has_gpu:
         ax.plot(r["gpu_util_avg"], color=ORANGE, label="GPU load")
     ax.set_ylim(0, 105)
-    ax.set_ylabel("%")
-    ax.set_title("Memory and GPU load")
-    ax.legend(loc="lower right", bbox_to_anchor=(1, 1), ncol=2)
+    ax.set_yticks([0, 50, 100])
+    title(ax, "Memory and GPU load %")
+    ax.legend(**legend)
+    for a in axes:
+        a.tick_params(labelsize=fs)
 
-    time_axis(axes[-1], days * 24)
+
+def small_card(d, now, path):
+    """Compact chart for the History grid: the three panels over the last CARD_HOURS."""
+    end = local_naive(now)
+    start = end - timedelta(hours=CARD_HOURS)
+    r = resample(d[d["t_local"] >= start], "10min")
+    fig, axes = plt.subplots(3, 1, figsize=(3.9, 3.5), sharex=True, gridspec_kw={"hspace": 0.42})
+    _panels(axes, r, compact=True)
+    time_axis(axes[-1], start, end, compact=True)
+    fig.subplots_adjust(left=0.1, right=0.98, top=0.93, bottom=0.1)
+    fig.savefig(path, dpi=100)
+    plt.close(fig)
+
+
+def detail_figure(d, now, hours, path):
+    """Full-size chart for a computer's page over a fixed window of `hours`."""
+    end = local_naive(now)
+    start = end - timedelta(hours=hours)
+    r = resample(d[d["t_local"] >= start], "10min" if hours <= 72 else "1h")
+    fig, axes = plt.subplots(3, 1, figsize=(10, 6.6), sharex=True)
+    _panels(axes, r, compact=False)
+    time_axis(axes[-1], start, end)
     fig.tight_layout()
     fig.savefig(path, dpi=110)
     plt.close(fig)
@@ -339,6 +351,7 @@ tr.off .bar span{background:#3b4a58}
 .facts{display:flex;flex-wrap:wrap;gap:10px 36px;padding:16px 20px;margin-bottom:16px}
 .facts div{font-size:12.5px;color:var(--ink2)} .facts b{display:block;font-size:15px;font-weight:500;color:var(--ink)}
 .chart{padding:12px} .chart img{width:100%;height:auto;display:block}
+.sec{margin:22px 0 10px;font-size:15px;font-weight:600}
 .empty{padding:40px;text-align:center;color:var(--ink2)} .empty b{display:block;color:var(--ink);font-size:16px;margin-bottom:6px}
 
 @media (max-width:760px){
@@ -535,9 +548,10 @@ def main():
                 + (stat('GPU temp', gpu_t, ' °C', '' if off else heat(gpu_t)) if pd.notna(gpu_t) else "")
                 + f"{stat('RAM', last['ram_pct'], '%')}</div>"
                 f"<a href='{pid}.html' aria-label='Open {h}'><img src='img/{pid}_card.png' "
-                f"alt='CPU usage and temperature for {h}, last {CARD_HOURS} hours' loading='lazy'></a></div>")
+                f"alt='CPU usage, temperature and memory for {h}, last {CARD_HOURS} hours' loading='lazy'></a></div>")
 
-            detail_figure(d, a.days, os.path.join(a.out, "img", f"{pid}.png"))
+            detail_figure(d, now, CARD_HOURS, os.path.join(a.out, "img", f"{pid}_48h.png"))
+            detail_figure(d, now, a.days * 24, os.path.join(a.out, "img", f"{pid}_long.png"))
             ids = ", ".join(sorted(d["file_id"].unique()))
             facts = (f"<div class='panel facts'><div>Status<b>{badge}</b></div><div>Lab<b>{html.escape(lab)}</b></div>"
                      f"<div>Operating system<b>{osname}</b></div><div>Last report<b>{when}</b></div>"
@@ -546,7 +560,10 @@ def main():
                 fh.write(page(f"{name} – Computer monitor", "", stamp,
                               f"<a class='back' href='index.html'>Back to all computers</a>"
                               f"<div class='title'><h2>{h}</h2>{tag(lab, lc, big=True)}</div>{facts}"
-                              f"<div class='panel chart'><img src='img/{pid}.png' alt='Usage and temperature for {h}, last {a.days} days'></div>"))
+                              f"<h3 class='sec'>Last {CARD_HOURS} hours</h3>"
+                              f"<div class='panel chart'><img src='img/{pid}_48h.png' alt='Usage and temperature for {h}, last {CARD_HOURS} hours'></div>"
+                              f"<h3 class='sec'>Last {a.days} days</h3>"
+                              f"<div class='panel chart'><img src='img/{pid}_long.png' alt='Usage and temperature for {h}, last {a.days} days' loading='lazy'></div>"))
 
         summary = lab_summary([c["state"] for c in group])
         section_head = f"<div class='labhead'>{tag(lab, lc, big=True)}<span class='sum'>{summary}</span></div>"
@@ -569,7 +586,7 @@ def main():
         fh.write(page("Computer monitor", "Latest", stamp, hero + "".join(latest_html), SORT_JS))
     with open(os.path.join(a.out, "history.html"), "w", encoding="utf-8") as fh:
         fh.write(page("History – Computer monitor", "History", stamp,
-                      f"<p style='margin:0 0 6px;color:var(--ink2)'>CPU usage and temperature over the last {CARD_HOURS} hours. "
+                      f"<p style='margin:0 0 6px;color:var(--ink2)'>CPU usage, temperature and memory over the last {CARD_HOURS} hours. "
                       f"Open a computer for {a.days} days of detail.</p>" + "".join(history_html)))
     print(f"built dashboard for {len(computers)} computers in {len(labs)} lab(s) in {a.out}/")
 
