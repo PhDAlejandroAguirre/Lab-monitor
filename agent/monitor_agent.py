@@ -56,6 +56,8 @@ FIELDS = [
     "ram_pct",        # RAM used % at report time
     "gpu_util_avg",   # %, blank if no NVIDIA GPU
     "gpu_temp_max",   # degC, blank if no NVIDIA GPU
+    "display_name",   # name chosen at install time (shown on the dashboard)
+    "lab",            # lab chosen at install time, e.g. "Lab1" (dashboard groups by it)
 ]
 
 DEFAULTS = {
@@ -63,7 +65,9 @@ DEFAULTS = {
     "github_repo": "lab-monitor",
     "branch": "data",
     "token": "",                 # or set the LABMON_TOKEN environment variable
-    "host_label": "",            # optional fixed id/name; default: derived from the network card
+    "display_name": "",          # name shown on the dashboard, e.g. "Lab1-PC03" (asked by the installer)
+    "lab": "",                   # lab shown on the dashboard, e.g. "Lab1" (asked by the installer)
+    "host_label": "",            # optional fixed id; default: derived from the network card
     "sample_interval_s": 60,
     "report_interval_s": 600,
     "retention_days": 20,
@@ -98,7 +102,7 @@ def safe_name(s):
 def load_config(path):
     cfg = dict(DEFAULTS)
     if path and os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8-sig") as f:   # -sig: tolerate a BOM from Windows editors
             cfg.update(json.load(f))
     cfg["token"] = os.environ.get("LABMON_TOKEN", cfg["token"])
     if not cfg["state_dir"]:
@@ -304,6 +308,8 @@ class Sampler:
             "ram_pct": r(psutil.virtual_memory().percent),
             "gpu_util_avg": r(avg(self.gutil)),
             "gpu_temp_max": r(max(self.gtemp) if self.gtemp else None),
+            "display_name": self.cfg.get("display_name", ""),
+            "lab": self.cfg.get("lab", ""),
         }
         self.reset()
         return row
@@ -434,9 +440,10 @@ class GitHub:
 
 
 def upload(cfg, buffer):
+    """Upload buffered reports. Returns True if nothing is left to send."""
     rows = buffer.read()
     if not rows:
-        return
+        return True
     try:
         ok = GitHub(cfg).update_file(f"data/{cfg['machine_id']}.csv", rows, cfg["retention_days"])
     except Exception as e:
@@ -445,10 +452,12 @@ def upload(cfg, buffer):
     if ok:
         buffer.replace([])
         log.info("uploaded %d report(s)", len(rows))
+        return True
     else:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=cfg["retention_days"])).strftime("%Y-%m-%dT%H:%M:%SZ")
         buffer.replace([r for r in rows if r["timestamp_utc"] >= cutoff])
         log.warning("upload failed; %d report(s) kept locally for next time", len(rows))
+        return False
 
 
 # --------------------------------------------------------------------------- main
@@ -483,6 +492,8 @@ def main():
         s = Sampler(cfg)
         time.sleep(2)
         print("machine id :", cfg["machine_id"], "(file: data/%s.csv)" % cfg["machine_id"])
+        print("name       :", cfg.get("display_name") or "(not set - dashboard will show the hostname)")
+        print("lab        :", cfg.get("lab") or "(not set)")
         print("hostname   :", socket.gethostname())
         print("reading    :", s.sample())
         if IS_WINDOWS and not s.temp:
@@ -496,8 +507,7 @@ def main():
         s = Sampler(cfg)
         time.sleep(2)
         buffer.append(s.report())
-        upload(cfg, buffer)
-        return
+        sys.exit(0 if upload(cfg, buffer) else 1)
 
     log.info("agent started: id=%s host=%s os=%s gpu=%s",
              cfg["machine_id"], socket.gethostname(), platform.system(), bool(_NVSMI))

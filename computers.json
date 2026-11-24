@@ -1,8 +1,8 @@
 {
-  "_help": "Optional. Map a machine id (pc-...) or a hostname to the name shown on the dashboard. Several ids/hostnames with the same name are merged into one computer (e.g. a dual-boot PC). Examples below - replace them with your own.",
+  "_help": "Optional. Rename computers or change their lab without touching them. Key: machine id (pc-...) or hostname. Value: a name, or {\"name\": ..., \"lab\": ...}. Entries here win over what was typed in the installer. Replace or delete the two examples below.",
   "pc-0123456789": "Lab1-PC01",
-  "desktop-abc123": "Lab1-PC01"
-}
-{
-  "pc-7b1608b8a4": "Workstation-Test"
+  "pc-9876543210": {
+    "name": "Lab2-PC04",
+    "lab": "Lab2"
+  }
 }
