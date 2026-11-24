@@ -1,13 +1,17 @@
 name: Build dashboard
 
-# Every 10 minutes: build the dashboard from the "data" branch and email temperature alerts.
+# Build the dashboard from the "data" branch and email temperature alerts. Started by the lab computers
+# after each upload (repository_dispatch), by the backup timer, or by the "Run workflow" button.
 #  - Always saves it as a downloadable zip ("lab-dashboard" under the run's Artifacts).
 #  - Also publishes it to GitHub Pages if the repository variable USE_PAGES is "true"
 #    (needs a public repo, or a private repo on GitHub Pro/Team; see README section 5).
 
 on:
+  repository_dispatch:         # sent by the lab computers right after they upload a report
+    types: [report]
   schedule:
-    - cron: "3-59/10 * * * *" # every 10 min (:03, :13, :23 ...), right after the computers report.
+    - cron: "3-59/10 * * * *" # backup timer every 10 min (GitHub often delays or skips these;
+                                # the computers' own trigger above is what keeps the page fresh).
                                 # Private repo on the free plan? use "7 * * * *" (hourly) to stay within free minutes.
   workflow_dispatch:           # "Run workflow" button in the Actions tab
     inputs:
