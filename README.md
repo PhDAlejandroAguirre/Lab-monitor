@@ -148,7 +148,8 @@ The computer appears on the dashboard at the next dashboard build (or right away
 *Build dashboard* from the Actions tab).
 
 Check the service with `systemctl status lab-monitor` (it should say *active (running)*; press `q` to exit).
-Logs: `journalctl -u lab-monitor -f`. After installing you can delete the copied folder; the installed
+Logs: `sudo tail -5 /var/lib/lab-monitor/agent.log` (the last 5 lines; a healthy one says
+`uploaded 1 report(s)` every 10 minutes) or `journalctl -u lab-monitor -f`. After installing you can delete the copied folder; the installed
 copy lives in `/opt/lab-monitor`.
 
 ### 3.3 Renaming a computer or moving it to another lab
@@ -376,6 +377,42 @@ so Gmail is the reliable option.
 
 ## 8. Troubleshooting
 
+### 8.1 "Last report" is old, but the computer is on
+
+Either the computer isn't sending, or GitHub isn't rebuilding the dashboard. Find out which:
+
+**Step 1: look at "Updated" at the top right of the dashboard.**
+- If **"Updated" is also old**, the computer may be fine; GitHub isn't rebuilding. Go to step 2.
+- If **"Updated" is recent** but "Last report" is old, the computer isn't sending. Go to step 3.
+
+**Step 2: check GitHub.** Open the **Actions** tab and look at the *Build dashboard* runs:
+- **Red ✗:** click the newest run, then the red step, and read the error.
+- **No runs for a while:** GitHub stopped scheduling the workflow, which can happen after the workflow
+  file is replaced. Click **Run workflow** to update now, then make any small commit on `main` (for
+  example, edit `README.md` with the pencil icon, add a space and commit). The schedule restarts.
+- **Green runs every 10 minutes:** the browser is showing an old copy. Press **Ctrl + Shift + R**.
+
+**Step 3: check the computer.**
+
+*Ubuntu*, in a terminal:
+
+```
+systemctl status lab-monitor                  # should say "active (running)"; press q to exit
+sudo tail -5 /var/lib/lab-monitor/agent.log   # last 5 log lines
+```
+
+A healthy log shows `uploaded 1 report(s)` about every 10 minutes (local time). Then:
+- If the **service isn't running**, start it: `sudo systemctl restart lab-monitor`.
+- If you see **`upload failed`** with HTTP 401, the token is wrong or expired; renew it (section 9).
+  Without an HTTP code, the computer has no internet. Reports are kept and sent later.
+- **More detail:** `journalctl -u lab-monitor -n 50`.
+
+*Windows:* open `C:\ProgramData\LabMonitor\agent.log` with Notepad and look at the last lines (same
+messages as above). In Task Scheduler (tick **View → Show Hidden Tasks**, since the tasks are hidden),
+the task `LabMonitor-Agent` should be *Running*. If it isn't, right-click it and choose **Run**.
+
+### 8.2 Common errors
+
 | Problem | Fix |
 |---|---|
 | `No module named 'psutil'` | Ubuntu: `sudo apt install python3-psutil`. Windows: `py -m pip install psutil` |
@@ -388,8 +425,8 @@ so Gmail is the reliable option.
 | `cpu_temp: None` on Ubuntu | `sudo apt install lm-sensors` then `sudo sensors-detect --auto` |
 | `cpu_temp: None` on Windows | LibreHardwareMonitor isn't running or its web server is off. Check `http://localhost:8085` (4.1) |
 | `--upload-now` doesn't create the `data` branch | Check the log (`~/.lab-monitor/agent.log` when testing on Ubuntu, `C:\ProgramData\LabMonitor\agent.log` on Windows). **HTTP 401**: wrong or expired token. **HTTP 404**: wrong username or repository name, or the token doesn't include this repository. **HTTP 403**: the token lacks *Contents: Read and write* |
-| A computer shows **Offline** | It's off, has no internet, or the token expired. Check its log |
-| The dashboard stopped updating | Actions tab. If GitHub disabled the scheduled workflow for inactivity, click **Enable workflow** |
+| A computer shows **Offline** | It's off, has no internet, or the token expired. See 8.1 |
+| The dashboard stopped updating | See 8.1, step 2. If GitHub shows a notice that the scheduled workflow was disabled for inactivity, click **Enable workflow** |
 
 ---
 
