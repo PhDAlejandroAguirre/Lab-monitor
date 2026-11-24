@@ -71,6 +71,8 @@ DEFAULTS = {
     "sample_interval_s": 60,
     "report_interval_s": 600,
     "retention_days": 20,
+    "trigger_dashboard": True,   # ask GitHub to rebuild the dashboard after uploading (see trigger_dashboard())
+    "trigger_min_gap_min": 8,    # ...unless a rebuild already started this many minutes ago
     "lhm_url": "http://localhost:8085/data.json",  # Windows: LibreHardwareMonitor web server
     "state_dir": "",
 }
@@ -438,6 +440,25 @@ class GitHub:
             return False
         return False
 
+    def trigger_dashboard(self, min_gap_min):
+        """Ask GitHub to rebuild the dashboard now (GitHub's own 10-minute timer is unreliable).
+        Skipped if a build started in the last min_gap_min minutes, so many computers reporting
+        at once don't flood the Actions tab. Uses the same token (Contents: Read and write)."""
+        st, runs = self._req("GET", f"{self.repo}/actions/workflows/dashboard.yml/runs?per_page=1")
+        if st == 200 and runs.get("workflow_runs"):
+            last = runs["workflow_runs"][0]
+            started = datetime.fromisoformat(last["created_at"].replace("Z", "+00:00"))
+            age = datetime.now(timezone.utc) - started
+            if last.get("status") in ("queued", "waiting", "pending") or age < timedelta(minutes=min_gap_min):
+                log.debug("dashboard build started %s min ago (%s) - not triggering", int(age.total_seconds() // 60), last.get("status"))
+                return False
+        st, _ = self._req("POST", f"{self.repo}/dispatches", {"event_type": "report"})
+        if st == 204:
+            log.info("asked GitHub to rebuild the dashboard")
+            return True
+        log.warning("could not trigger the dashboard build (HTTP %s)", st)
+        return False
+
 
 def upload(cfg, buffer):
     """Upload buffered reports. Returns True if nothing is left to send."""
@@ -452,6 +473,11 @@ def upload(cfg, buffer):
     if ok:
         buffer.replace([])
         log.info("uploaded %d report(s)", len(rows))
+        if cfg.get("trigger_dashboard", True):
+            try:
+                GitHub(cfg).trigger_dashboard(cfg.get("trigger_min_gap_min", 8))
+            except Exception as e:
+                log.warning("dashboard trigger error: %s", e)
         return True
     else:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=cfg["retention_days"])).strftime("%Y-%m-%dT%H:%M:%SZ")

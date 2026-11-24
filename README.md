@@ -6,7 +6,7 @@ load and temperature. GitHub Actions builds a dashboard from the reports every 1
 reports older than 20 days every day.
 
 ```
-lab PCs ──(every 10 min)──▶ branch "data": data/<machine_id>.csv ──(hourly)──▶ dashboard
+lab PCs ──(every 10 min)──▶ branch "data": data/<machine_id>.csv ──(rebuild)──▶ dashboard
                                          └──(daily)── delete reports > 20 days + reset branch history
 ```
 
@@ -387,9 +387,8 @@ Either the computer isn't sending, or GitHub isn't rebuilding the dashboard. Fin
 
 **Step 2: check GitHub.** Open the **Actions** tab and look at the *Build dashboard* runs:
 - **Red ✗:** click the newest run, then the red step, and read the error.
-- **No runs for a while:** GitHub stopped scheduling the workflow, which can happen after the workflow
-  file is replaced. Click **Run workflow** to update now, then make any small commit on `main` (for
-  example, edit `README.md` with the pencil icon, add a space and commit). The schedule restarts.
+- **No runs for a while:** the computers may not be triggering rebuilds (see "How the dashboard stays
+  up to date" in section 10), or none are reporting (step 3). Click **Run workflow** to update now.
 - **Green runs every 10 minutes:** the browser is showing an old copy. Press **Ctrl + Shift + R**.
 
 **Step 3: check the computer.**
@@ -458,6 +457,17 @@ Measured on Linux:
 The agent takes a reading once a minute but reports every 10 minutes. The 10-minute **CPU average is
 exact** either way. The per-minute readings only catch short temperature peaks. To read once per
 report, set `"sample_interval_s": 600`.
+
+### How the dashboard stays up to date
+
+GitHub's own timer (`schedule` in `dashboard.yml`) is unreliable: GitHub delays scheduled runs and often
+skips them entirely, especially on new or quiet repositories. So after each upload, a computer also
+**asks GitHub to rebuild the dashboard** (a `repository_dispatch` event called `report`, allowed by the same
+token). It skips this if a rebuild started less than 8 minutes ago, so many computers reporting at once
+cause roughly one rebuild every 10 minutes. These runs appear in the Actions tab as *Build dashboard*
+with the event `repository_dispatch`. The 10-minute schedule stays as a backup.
+
+To turn it off on a computer, set `"trigger_dashboard": false` in its config.
 
 ### Data and retention
 
