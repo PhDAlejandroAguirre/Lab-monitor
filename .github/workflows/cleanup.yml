@@ -1,0 +1,54 @@
+name: Clean up old data
+
+# Once a day: drop reports older than RETENTION_DAYS and replace the history of the
+# "data" branch with a single commit, so the repository never grows over time.
+
+on:
+  schedule:
+    - cron: "41 4 * * *"      # every day at 04:41 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  RETENTION_DAYS: 20
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: data
+          fetch-depth: 1
+
+      - name: Prune and squash (retries if a computer uploads meanwhile)
+        run: |
+          git config user.name  "lab-monitor-bot"
+          git config user.email "lab-monitor-bot@users.noreply.github.com"
+          for attempt in 1 2 3 4 5; do
+            git fetch --depth=1 origin data
+            git reset --hard -q FETCH_HEAD
+            lease=$(git rev-parse HEAD)
+            python3 - <<'PY'
+          import csv, glob, os
+          from datetime import datetime, timedelta, timezone
+          cutoff = (datetime.now(timezone.utc) - timedelta(days=int(os.environ["RETENTION_DAYS"]))).strftime("%Y-%m-%dT%H:%M:%SZ")
+          for f in glob.glob("data/*.csv"):
+              with open(f, newline="") as fh:
+                  r = csv.DictReader(fh); fields = r.fieldnames; rows = [x for x in r if x["timestamp_utc"] >= cutoff]
+              if not rows:
+                  os.remove(f); print("removed", f); continue
+              with open(f, "w", newline="") as fh:
+                  w = csv.DictWriter(fh, fieldnames=fields, lineterminator="\n"); w.writeheader(); w.writerows(rows)
+          PY
+            git checkout -q --orphan snapshot
+            git add -A
+            git commit -q -m "data snapshot $(date -u +%F)" || true
+            if git push --force-with-lease=data:$lease origin snapshot:data; then
+              echo "done"; exit 0
+            fi
+            echo "a computer uploaded meanwhile - retrying"; git checkout -q -f FETCH_HEAD; git branch -D snapshot; sleep 20
+          done
+          exit 1

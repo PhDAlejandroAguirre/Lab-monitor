@@ -1,0 +1,9 @@
+{
+  "github_owner": "YOUR_GITHUB_USERNAME",
+  "github_repo": "lab-monitor",
+  "token": "github_pat_PASTE_YOUR_TOKEN_HERE",
+  "host_label": "",
+  "sample_interval_s": 60,
+  "report_interval_s": 600,
+  "retention_days": 20
+}
