@@ -505,3 +505,4 @@ timestamp_utc,machine_id,hostname,os,cpu_avg,cpu_max,core_max,cpu_temp_avg,cpu_t
 2026-11-28T13:02:59Z,pc-918fb2823f,DESKTOP-VFT8BSO,windows,0.3,0.4,3.5,,,7.5,0.0,36.0,WS-A-PC01-W,Lab1
 2026-11-28T13:13:44Z,pc-918fb2823f,DESKTOP-VFT8BSO,windows,0.3,0.4,2.7,,,7.5,0.0,36.0,WS-A-PC01-W,Lab1
 2026-11-28T13:24:28Z,pc-918fb2823f,DESKTOP-VFT8BSO,windows,0.3,0.4,3.0,,,7.5,0.0,36.0,WS-A-PC01-W,Lab1
+2026-11-28T13:35:13Z,pc-918fb2823f,DESKTOP-VFT8BSO,windows,0.3,0.3,3.1,,,7.5,0.0,36.0,WS-A-PC01-W,Lab1
